@@ -5,7 +5,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
 
   const thumbnailUrl =
-    'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=2070&auto=format&fit=crop';
+    'https://tse4.mm.bing.net/th/id/OIP.f5L9QYjSeP6Z37JID5kIrAHaHa?cb=thfvnextfalcon&rs=1&pid=ImgDetMain&o=7&rm=3';
 
   const handlePlayClick = () => {
     setIsPlaying(true);
